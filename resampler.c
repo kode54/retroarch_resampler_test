@@ -173,9 +173,9 @@ int resampler_get_free(void *_r)
 int resampler_get_min_fill(void *_r)
 {
 	resampler *r = (resampler *)_r;
-	int total_free = buffer_size * stereo - r->infilled;
 	const int min_needed = write_offset + stereo;
-	return total_free >= min_needed ? min_needed : total_free;
+	int min_free = min_needed - r->infilled;
+	return min_free < 0 ? 0 : min_free;
 }
 
 void resampler_write_pair(void *_r, sample_t ls, sample_t rs)
@@ -192,6 +192,10 @@ void resampler_write_pair(void *_r, sample_t ls, sample_t rs)
 		r->infilled += stereo;
 	}
 }
+
+#ifdef _MSC_VER
+#define restrict __restrict
+#endif
 
 static const sample_t * resampler_inner_loop( resampler *r, sample_t** out_,
 		sample_t const* out_end, sample_t const in [], int in_size )
@@ -244,6 +248,8 @@ static const sample_t * resampler_inner_loop( resampler *r, sample_t** out_,
 	}
 	return in;
 }
+
+#undef restrict
 
 static int resampler_wrapper( resampler *r, sample_t out [], int* out_size,
 		sample_t const in [], int in_size )

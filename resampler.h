@@ -25,6 +25,10 @@ typedef int32_t sample_t;
 #error Choose a bit depth!
 #endif
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 void * resampler_create();
 void resampler_destroy(void *);
 
@@ -40,5 +44,9 @@ void resampler_write_pair(void *, sample_t ls, sample_t rs);
 int resampler_get_avail(void *);
 
 void resampler_read_pair( void *, sample_t *ls, sample_t *rs );
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
