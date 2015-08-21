@@ -18,7 +18,9 @@ Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA */
 #undef PI
 #define PI 3.1415926535897932384626433832795029
 
+enum { imp_scale = 0x7FFF };
 typedef int16_t imp_t;
+typedef int32_t imp_off_t; /* for max_res of 512 and impulse width of 32, end offsets must be 32 bits */
 
 #if RESAMPLER_BITS == 16
 typedef int32_t intermediate_t;
@@ -55,14 +57,14 @@ static void gen_sinc( double rolloff, int width, double offset, double spacing, 
 	}
 }
 
-enum { width = 16 };
+enum { width = 32 };
 enum { stereo = 2 };
-enum { max_res = 32 };
+enum { max_res = 512 };
 enum { min_width = (width < 4 ? 4 : width) };
 enum { adj_width = min_width / 4 * 4 + 2 };
 enum { write_offset = adj_width * stereo };
 
-enum { buffer_size = 32 };
+enum { buffer_size = 128 };
 
 typedef struct _resampler
 {
@@ -73,8 +75,10 @@ typedef struct _resampler
 	int outptr;
 	int outfilled;
 
+	int latency;
+
 	imp_t const* imp;
-	imp_t impulses [max_res * (adj_width + 2)];
+	imp_t impulses [max_res * (adj_width + 2 * (sizeof(imp_off_t) / sizeof(imp_t)))];
 	sample_t buffer_in[buffer_size * stereo * 2];
 	sample_t buffer_out[buffer_size * stereo];
 } resampler;
@@ -84,6 +88,22 @@ void * resampler_create()
 	resampler *r = (resampler *) malloc(sizeof(resampler));
 	if (r) resampler_clear(r);
 	return r;
+}
+
+void * resampler_dup(void *_r)
+{
+	resampler *r = (resampler *)_r;
+	resampler *t = (resampler *) malloc(sizeof(resampler));
+	if (r && t)
+	{
+		memcpy(t, r, sizeof(resampler));
+		t->imp = t->impulses + (r->imp - r->impulses);
+	}
+	else if (t)
+	{
+		resampler_clear(t);
+	}
+	return t;
 }
 
 void resampler_destroy(void *r)
@@ -99,6 +119,7 @@ void resampler_clear(void *_r)
 	r->infilled = 0;
 	r->outptr = 0;
 	r->outfilled = 0;
+	r->latency = 0;
 	r->imp = r->impulses;
 
 	resampler_set_rate(r, 1.0);
@@ -111,7 +132,7 @@ void resampler_set_rate( void *_r, double new_factor )
 	double const rolloff = 0.999;
 	double const gain = 1.0;
 
-	// determine number of sub-phases that yield lowest error
+	/* determine number of sub-phases that yield lowest error */
 	double ratio_ = 0.0;
 	int res = -1;
 	{
@@ -132,18 +153,18 @@ void resampler_set_rate( void *_r, double new_factor )
 	}
 	rs->rate_ = ratio_;
 
-	// how much of input is used for each output sample
+	/* how much of input is used for each output sample */
 	int const step = stereo * (int) floor( ratio_ );
 	double fraction = fmod( ratio_, 1.0 );
 
 	double const filter = (ratio_ < 1.0) ? 1.0 : 1.0 / ratio_;
 	double pos = 0.0;
-	//int input_per_cycle = 0;
+	/*int input_per_cycle = 0;*/
 	imp_t* out = rs->impulses;
 	for ( int n = res; --n >= 0; )
 	{
 		gen_sinc( rolloff, (int) (rs->width_ * filter + 1) & ~1, pos, filter,
-				(double) (0x7FFF * gain * filter), (int) rs->width_, out );
+				(double)(imp_scale * gain * filter), (int) rs->width_, out );
 		out += rs->width_;
 
 		int cur_step = step;
@@ -154,12 +175,13 @@ void resampler_set_rate( void *_r, double new_factor )
 			cur_step += stereo;
 		}
 
-		*out++ = (cur_step - rs->width_ * 2 + 4) * sizeof (sample_t);
-		*out++ = 4 * sizeof (imp_t);
-		//input_per_cycle += cur_step;
+		((imp_off_t*)out)[0] = (cur_step - rs->width_ * 2 + 4) * sizeof (sample_t);
+		((imp_off_t*)out)[1] = 2 * sizeof (imp_t) + 2 * sizeof (imp_off_t);
+		out += 2 * (sizeof(imp_off_t) / sizeof(imp_t));
+		/*input_per_cycle += cur_step;*/
 	}
-	// last offset moves back to beginning of impulses
-	out [-1] -= (char*) out - (char*) rs->impulses;
+	/* last offset moves back to beginning of impulses*/
+	((imp_off_t*)out) [-1] -= (char*) out - (char*) rs->impulses;
 
 	rs->imp = rs->impulses;
 }
@@ -173,14 +195,28 @@ int resampler_get_free(void *_r)
 int resampler_get_min_fill(void *_r)
 {
 	resampler *r = (resampler *)_r;
+	int total_free = buffer_size * stereo - r->infilled;
 	const int min_needed = write_offset + stereo;
-	int min_free = min_needed - r->infilled;
-	return min_free < 0 ? 0 : min_free;
+	return total_free >= min_needed ? min_needed : total_free;
 }
 
 void resampler_write_pair(void *_r, sample_t ls, sample_t rs)
 {
 	resampler *r = (resampler *)_r;
+
+	if (!r->latency)
+	{
+		for (int i = 0; i < adj_width; ++i)
+		{
+			r->buffer_in[r->inptr + 0] = 0;
+			r->buffer_in[r->inptr + 1] = 0;
+			r->buffer_in[buffer_size * stereo + r->inptr + 0] = 0;
+			r->buffer_in[buffer_size * stereo + r->inptr + 1] = 0;
+			r->inptr = (r->inptr + stereo) % (buffer_size * stereo);
+			r->infilled += stereo;
+		}
+		r->latency = 1;
+	}
 
 	if (r->infilled < buffer_size * stereo)
 	{
@@ -192,10 +228,6 @@ void resampler_write_pair(void *_r, sample_t ls, sample_t rs)
 		r->infilled += stereo;
 	}
 }
-
-#ifdef _MSC_VER
-#define restrict __restrict
-#endif
 
 static const sample_t * resampler_inner_loop( resampler *r, sample_t** out_,
 		sample_t const* out_end, sample_t const in [], int in_size )
@@ -209,7 +241,7 @@ static const sample_t * resampler_inner_loop( resampler *r, sample_t** out_,
 
 		do
 		{
-			// accumulate in extended precision
+			/* accumulate in extended precision*/
 			int pt = imp [0];
 			intermediate_t l = pt * in [0];
 			intermediate_t r = pt * in [1];
@@ -221,7 +253,7 @@ static const sample_t * resampler_inner_loop( resampler *r, sample_t** out_,
 				l += pt * in [2];
 				r += pt * in [3];
 
-				// pre-increment more efficient on some RISC processors
+				/* pre-increment more efficient on some RISC processors*/
 				imp += 2;
 				pt = imp [0];
 				r += pt * in [5];
@@ -232,10 +264,10 @@ static const sample_t * resampler_inner_loop( resampler *r, sample_t** out_,
 			l += pt * in [2];
 			r += pt * in [3];
 
-			// these two "samples" after the end of the impulse give the
-			// proper offsets to the next input sample and next impulse
-			in  = (sample_t const*) ((char const*) in  + imp [2]); // some negative value
-			imp = (imp_t const*) ((char const*) imp + imp [3]); // small positive or large negative
+			/* these two "samples" after the end of the impulse give the
+			 * proper offsets to the next input sample and next impulse */
+			in  = (sample_t const*) ((char const*) in  + ((imp_off_t*)(&imp [2]))[0]); /* some negative value */
+			imp = (imp_t const*) ((char const*) imp + ((imp_off_t*)(&imp [2]))[1]); /* small positive or large negative */
 
 			out [0] = (sample_t) (l >> 15);
 			out [1] = (sample_t) (r >> 15);
@@ -248,8 +280,6 @@ static const sample_t * resampler_inner_loop( resampler *r, sample_t** out_,
 	}
 	return in;
 }
-
-#undef restrict
 
 static int resampler_wrapper( resampler *r, sample_t out [], int* out_size,
 		sample_t const in [], int in_size )
@@ -285,10 +315,8 @@ int resampler_get_avail(void *_r)
 	return r->outfilled;
 }
 
-void resampler_read_pair( void *_r, sample_t *ls, sample_t *rs )
+static void resampler_read_pair_internal( resampler *r, sample_t *ls, sample_t *rs, int advance )
 {
-	resampler *r = (resampler *)_r;
-
 	if (r->outfilled < stereo)
 	  resampler_fill( r );
 	if (r->outfilled < stereo)
@@ -299,6 +327,21 @@ void resampler_read_pair( void *_r, sample_t *ls, sample_t *rs )
 	}
 	*ls = r->buffer_out[r->outptr + 0];
 	*rs = r->buffer_out[r->outptr + 1];
-	r->outptr = (r->outptr + 2) % (buffer_size * stereo);
-	r->outfilled -= stereo;
+	if (advance)
+	{
+		r->outptr = (r->outptr + 2) % (buffer_size * stereo);
+		r->outfilled -= stereo;
+	}
+}
+
+void resampler_read_pair( void *_r, sample_t *ls, sample_t *rs )
+{
+	resampler *r = (resampler *)_r;
+	resampler_read_pair_internal(r, ls, rs, 1);
+}
+
+void resampler_peek_pair( void *_r, sample_t *ls, sample_t *rs )
+{
+	resampler *r = (resampler *)_r;
+	resampler_read_pair_internal(r, ls, rs, 0);
 }
