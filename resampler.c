@@ -2,6 +2,7 @@
 
 #include <math.h>
 #include <stdlib.h>
+#include <string.h>
 
 /* Copyright (C) 2004-2008 Shay Green.
    Copyright (C) 2015 Christopher Snowhill. This module is free software; you
@@ -195,9 +196,10 @@ int resampler_get_free(void *_r)
 int resampler_get_min_fill(void *_r)
 {
 	resampler *r = (resampler *)_r;
-	int total_free = buffer_size * stereo - r->infilled;
 	const int min_needed = write_offset + stereo;
-	return total_free >= min_needed ? min_needed : total_free;
+	const int latency = r->latency ? 0 : adj_width;
+	int min_free = min_needed - r->infilled - latency;
+	return min_free < 0 ? 0 : min_free;
 }
 
 void resampler_write_pair(void *_r, sample_t ls, sample_t rs)
@@ -206,7 +208,7 @@ void resampler_write_pair(void *_r, sample_t ls, sample_t rs)
 
 	if (!r->latency)
 	{
-		for (int i = 0; i < adj_width; ++i)
+		for (int i = 0; i < adj_width / 2; ++i)
 		{
 			r->buffer_in[r->inptr + 0] = 0;
 			r->buffer_in[r->inptr + 1] = 0;
