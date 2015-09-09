@@ -13,7 +13,9 @@ details. You should have received a copy of the GNU Lesser General Public
 License along with this module; if not, write to the Free Software Foundation,
 Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA */
 
-#define RESAMPLER_BITS 32
+#define FLOAT 1
+
+#define RESAMPLER_BITS 32 // +FLOAT
 // #define RESAMPLER_DECORATE
 
 #ifdef RESAMPLER_DECORATE
@@ -40,6 +42,10 @@ Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA */
 typedef int16_t sample_t;
 #elif RESAMPLER_BITS == 32
 typedef int32_t sample_t;
+#elif RESAMPLER_BITS == 32+FLOAT
+typedef float sample_t;
+#elif RESAMPLER_BITS == 64+FLOAT
+typedef double sample_t;
 #else
 #error Choose a bit depth!
 #endif

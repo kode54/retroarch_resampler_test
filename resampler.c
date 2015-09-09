@@ -19,14 +19,35 @@ Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA */
 #undef PI
 #define PI 3.1415926535897932384626433832795029
 
+#if RESAMPLER_BITS == 32+1
+enum { imp_scale = 1 };
+typedef float imp_t;
+typedef int32_t imp_off_t;
+enum { imp_off_size = 2 };
+#elif RESAMPLER_BITS == 64+1
+enum { imp_scale = 1 };
+typedef double imp_t;
+typedef int32_t imp_off_t;
+enum { imp_off_size = 1 };
+#else
 enum { imp_scale = 0x7FFF };
 typedef int16_t imp_t;
 typedef int32_t imp_off_t; /* for max_res of 512 and impulse width of 32, end offsets must be 32 bits */
+enum { imp_off_size = 4 };
+#endif
 
 #if RESAMPLER_BITS == 16
 typedef int32_t intermediate_t;
+#define imp_finalize(x) ((x)>>15)
 #elif RESAMPLER_BITS == 32
 typedef int64_t intermediate_t;
+#define imp_finalize(x) ((x)>>15)
+#elif RESAMPLER_BITS == 32+1
+typedef float intermediate_t;
+#define imp_finalize(x) (x)
+#elif RESAMPLER_BITS == 64+1
+typedef double intermediate_t;
+#define imp_finalize(x) (x)
 #endif
 
 static void gen_sinc( double rolloff, int width, double offset, double spacing, double scale,
@@ -79,7 +100,7 @@ typedef struct _resampler
 	int latency;
 
 	imp_t const* imp;
-	imp_t impulses [max_res * (adj_width + 2 * (sizeof(imp_off_t) / sizeof(imp_t)))];
+	imp_t impulses [max_res * (adj_width + imp_off_size)];
 	sample_t buffer_in[buffer_size * stereo * 2];
 	sample_t buffer_out[buffer_size * stereo];
 } resampler;
@@ -178,7 +199,7 @@ void resampler_set_rate( void *_r, double new_factor )
 
 		((imp_off_t*)out)[0] = (cur_step - rs->width_ * 2 + 4) * sizeof (sample_t);
 		((imp_off_t*)out)[1] = 2 * sizeof (imp_t) + 2 * sizeof (imp_off_t);
-		out += 2 * (sizeof(imp_off_t) / sizeof(imp_t));
+		out += imp_off_size;
 		/*input_per_cycle += cur_step;*/
 	}
 	/* last offset moves back to beginning of impulses*/
@@ -248,7 +269,7 @@ static const sample_t * resampler_inner_loop( resampler *r, sample_t** out_,
 		do
 		{
 			/* accumulate in extended precision*/
-			int pt = imp [0];
+			intermediate_t pt = imp [0];
 			intermediate_t l = (intermediate_t)pt * (intermediate_t)(in [0]);
 			intermediate_t r = (intermediate_t)pt * (intermediate_t)(in [1]);
 			if ( out >= out_end )
@@ -275,8 +296,8 @@ static const sample_t * resampler_inner_loop( resampler *r, sample_t** out_,
 			in  = (sample_t const*) ((char const*) in  + ((imp_off_t*)(&imp [2]))[0]); /* some negative value */
 			imp = (imp_t const*) ((char const*) imp + ((imp_off_t*)(&imp [2]))[1]); /* small positive or large negative */
 
-			out [0] = (sample_t) (l >> 15);
-			out [1] = (sample_t) (r >> 15);
+			out [0] = (sample_t) imp_finalize(l);
+			out [1] = (sample_t) imp_finalize(r);
 			out += 2;
 		}
 		while ( in < in_end );
