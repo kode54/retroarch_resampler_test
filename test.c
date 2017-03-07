@@ -3,44 +3,81 @@
 
 #include "resampler.h"
 
+static inline int32_t read_24(const uint8_t * p)
+{
+  struct { int32_t sample:24; } sample;
+  sample.sample = p[0] + (p[1] * 256) + (p[2] * 65536);
+  return sample.sample;
+}
+
+static inline void write_24(FILE * f, int32_t sample)
+{
+  int8_t buffer[3];
+  buffer[0] = (sample & 255);
+  buffer[1] = (sample >> 8) & 255;
+  buffer[2] = (sample >> 16) & 255;
+  fwrite(buffer, 1, 3, f);
+}
+
 int main(int argc, char ** argv)
 {
   int samples_free;
   size_t read;
   size_t i;
+  size_t nf;
 
   void * resampler = resampler_create();
 
-  FILE * f = fopen("sweep.raw", "rb");
-  FILE * g = fopen("sweep44.raw", "wb");
+  FILE * f;
+  FILE * g = fopen("sweep_out_44.raw", "wb");
 
-  resampler_set_rate(resampler, 48000.0 / 44100.0);
-
-  for (;;)
+  typedef struct sweep_info
   {
-    samples_free = resampler_get_free(resampler) / 2;
+    const char * name;
+    int freq;
+  } sweep_info;
+
+  const sweep_info files[4] = { { "sweep16.raw", 16000 },
+                                { "sweep32.raw", 32000 },
+                                { "sweep48.raw", 48000 },
+                                { "sweep96.raw", 96000 } };
+
+  for ( nf = 0; nf < 4; nf++ )
+  {
+    f = fopen( files[nf].name, "rb" );
+
+    resampler_set_rate(resampler, (double)(files[nf].freq) / 44100.0);
+
+    for (;;)
     {
-      int16_t samples[samples_free];
-      read = fread(samples, 2, samples_free, f);
-      for (i = 0; i < read; ++i)
+      samples_free = resampler_get_free(resampler) / 2;
       {
-        resampler_write_pair(resampler, samples[i], samples[i]);
+        uint8_t samples[samples_free * 3];
+        read = fread(samples, 3, samples_free, f);
+        for (i = 0; i < read; ++i)
+        {
+          resampler_write_sample(resampler, read_24(samples + i * 3));
+        }
       }
-    }
 
-    while (resampler_get_avail(resampler))
-    {
-      sample_t sample;
-      resampler_read_pair(resampler, &sample, &sample);
-      fwrite(&sample, sizeof(sample_t), 1, g);
-    }
+      while (resampler_get_avail(resampler))
+      {
+        sample_t sample;
+        resampler_read_sample(resampler, &sample);
+        if (sample > (1 << 23) - 1)
+          sample = (1 << 23) - 1;
+        else if (sample < -(1 << 23))
+          sample = -(1 << 23);
+        write_24(g, sample);
+      }
 
-    if (feof(f) && !resampler_get_avail(resampler))
-      break;
+      if (feof(f) && !resampler_get_avail(resampler))
+        break;
+    }
+    fclose(f);
   }
 
   fclose(g);
-  fclose(f);
 
   resampler_destroy(resampler);
 

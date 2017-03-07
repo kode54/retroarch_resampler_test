@@ -13,10 +13,8 @@ details. You should have received a copy of the GNU Lesser General Public
 License along with this module; if not, write to the Free Software Foundation,
 Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA */
 
-#define FLOAT 1
-
-#define RESAMPLER_BITS 32 // +FLOAT
-// #define RESAMPLER_DECORATE
+#define RESAMPLER_BITS 32
+#define RESAMPLER_DECORATE syntrax
 
 #ifdef RESAMPLER_DECORATE
 #undef PASTE
@@ -25,15 +23,16 @@ Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA */
 #define EVALUATE(a,b) PASTE(a,b)
 #define resampler_create EVALUATE(RESAMPLER_DECORATE,_resampler_create)
 #define resampler_dup EVALUATE(RESAMPLER_DECORATE,_resampler_dup)
+#define resampler_dup_inplace EVALUATE(RESAMPLER_DECORATE,_resampler_dup_inplace)
 #define resampler_destroy EVALUATE(RESAMPLER_DECORATE,_resampler_destroy)
 #define resampler_clear EVALUATE(RESAMPLER_DECORATE,_resampler_clear)
 #define resampler_set_rate EVALUATE(RESAMPLER_DECORATE,_resampler_set_rate)
 #define resampler_get_free EVALUATE(RESAMPLER_DECORATE,_resampler_get_free)
 #define resampler_get_min_fill EVALUATE(RESAMPLER_DECORATE,_resampler_get_min_fill)
-#define resampler_write_pair EVALUATE(RESAMPLER_DECORATE,_resampler_write_pair)
+#define resampler_write_sample EVALUATE(RESAMPLER_DECORATE,_resampler_write_sample)
 #define resampler_get_avail EVALUATE(RESAMPLER_DECORATE,_resampler_get_avail)
-#define resampler_read_pair EVALUATE(RESAMPLER_DECORATE,_resampler_read_pair)
-#define resampler_peek_pair EVALUATE(RESAMPLER_DECORATE,_resampler_peek_pair)
+#define resampler_read_sample EVALUATE(RESAMPLER_DECORATE,_resampler_read_sample)
+#define resampler_peek_sample EVALUATE(RESAMPLER_DECORATE,_resampler_peek_sample)
 #endif
 
 #include <stdint.h>
@@ -42,10 +41,6 @@ Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA */
 typedef int16_t sample_t;
 #elif RESAMPLER_BITS == 32
 typedef int32_t sample_t;
-#elif RESAMPLER_BITS == 32+FLOAT
-typedef float sample_t;
-#elif RESAMPLER_BITS == 64+FLOAT
-typedef double sample_t;
 #else
 #error Choose a bit depth!
 #endif
@@ -55,7 +50,8 @@ extern "C" {
 #endif
 
 void * resampler_create();
-void * resampler_dup(void *);
+void * resampler_dup(const void *);
+void resampler_dup_inplace(void *, const void *);
 void resampler_destroy(void *);
 
 void resampler_clear(void *);
@@ -65,12 +61,12 @@ void resampler_set_rate( void *, double new_factor );
 int resampler_get_free(void *);
 int resampler_get_min_fill(void *);
 
-void resampler_write_pair(void *, sample_t ls, sample_t rs);
+void resampler_write_sample(void *, sample_t s);
 
 int resampler_get_avail(void *);
 
-void resampler_read_pair( void *, sample_t *ls, sample_t *rs );
-void resampler_peek_pair( void *, sample_t *ls, sample_t *rs );
+void resampler_read_sample( void *, sample_t *s );
+void resampler_peek_sample( void *, sample_t *s );
 
 #ifdef __cplusplus
 }
