@@ -147,3 +147,24 @@ Higher quality:
 Highest quality:
 ![Highest quality spectrum](/images/spectrum_retroarch_highest.png)
 
+Looks pretty scary! But if we go for a more optimistic target...
+
+# Results with -96 dB noise floor target
+
+Lowest quality -96 dB:
+![Lowest quality spectrum -96 dB](/images/spectrum_retroarch_96db_lowest.png)
+
+Lower quality -96 dB:
+![Lower quality spectrum -96 dB](/images/spectrum_retroarch_96db_lower.png)
+
+Normal/Dont care quality -96 dB:
+![Normal quality spectrum -96 dB](/images/spectrum_retroarch_96dB_normal.png)
+
+Higher quality -96 dB:
+![Higher quality spectrum](/images/spectrum_retroarch_96db_higher.png)
+
+Highest quality -96 dB:
+![Highest quality spectrum](/images/spectrum_retroarch_96db_highest.png)
+
+With that being much closer to the usual threshold of human hearing, we
+see way more optimistic looking graphs!
