@@ -158,7 +158,7 @@ Lower quality -96 dB:
 ![Lower quality spectrum -96 dB](/images/spectrum_retroarch_96db_lower.png)
 
 Normal/Dont care quality -96 dB:
-![Normal quality spectrum -96 dB](/images/spectrum_retroarch_96dB_normal.png)
+![Normal quality spectrum -96 dB](/images/spectrum_retroarch_96db_normal.png)
 
 Higher quality -96 dB:
 ![Higher quality spectrum](/images/spectrum_retroarch_96db_higher.png)
