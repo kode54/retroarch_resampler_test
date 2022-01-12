@@ -1,22 +1,19 @@
 #include <stdio.h>
 #include <stdint.h>
+#include <string.h>
 
-#include "resampler.h"
+#include <audio/audio_resampler.h>
 
-static inline int32_t read_24(const uint8_t * p)
+static inline float read_f32(const uint8_t * p)
 {
-  struct { int32_t sample:24; } sample;
-  sample.sample = p[0] + (p[1] * 256) + (p[2] * 65536);
-  return sample.sample;
+  struct { float sample; } sample;
+  sample.sample = *(float*)(p);
+  return (float)(sample.sample);
 }
 
-static inline void write_24(FILE * f, int32_t sample)
+static inline void write_f32(FILE * f, float sample)
 {
-  int8_t buffer[3];
-  buffer[0] = (sample & 255);
-  buffer[1] = (sample >> 8) & 255;
-  buffer[2] = (sample >> 16) & 255;
-  fwrite(buffer, 1, 3, f);
+  fwrite(&sample, 1, 4, f);
 }
 
 int main(int argc, char ** argv)
@@ -26,7 +23,8 @@ int main(int argc, char ** argv)
   size_t i;
   size_t nf;
 
-  void * resampler = resampler_create();
+  const retro_resampler_t * resampler = NULL;
+  void * resampler_data = NULL;
 
   FILE * f;
   FILE * g = fopen("sweep_out_44.raw", "wb");
@@ -42,36 +40,111 @@ int main(int argc, char ** argv)
                                 { "sweep48.raw", 48000 },
                                 { "sweep96.raw", 96000 } };
 
+  float buffer[1024];
+  float outbuffer[4096];
+
   for ( nf = 0; nf < 4; nf++ )
   {
     f = fopen( files[nf].name, "rb" );
 
-    resampler_set_rate(resampler, (double)(files[nf].freq) / 44100.0);
+    double ratio = 44100.0 / (double)(files[nf].freq);
+
+    size_t latency;
+    size_t dispose_in = 0;
+    size_t dispose_out = 0;
+    ssize_t prefill_out = -1;
+    int next_eof = 0;
+
+    if (!retro_resampler_realloc(&resampler_data, &resampler,
+      "sinc", RESAMPLER_QUALITY_HIGHEST, 1, ratio))
+      break;
+
+    struct resampler_data src_data;
+
+    src_data.ratio = ratio;
+
+    src_data.data_in = buffer;
+
+    dispose_in = latency = resampler->latency(resampler_data);
+    dispose_out = latency * ratio;
 
     for (;;)
     {
-      samples_free = resampler_get_free(resampler) / 2;
+      size_t samples_out;
+      size_t samples_skipped = 0;
+      size_t samples_in = 1024;
+      size_t samples_out_estimated = samples_in * ratio;
+      samples_out_estimated = (samples_out_estimated + 7) & ~7;
+
+      if (samples_out_estimated > 4096)
       {
-        uint8_t samples[samples_free * 3];
-        read = fread(samples, 3, samples_free, f);
+        samples_out_estimated = 4096;
+        samples_in = 4096 / ratio;
+        if (!samples_in) samples_in = 1;
+      }
+
+      {
+        uint8_t samples[samples_in * 4];
+        if (dispose_in)
+        {
+          read = dispose_in;
+          if (read > samples_in)
+            read = samples_in;
+          memset(samples, 0, read * 4);
+          dispose_in -= read;
+          samples_in -= read;
+          samples_skipped = read;
+        }
+        if (!next_eof)
+        {
+          read = fread(samples + samples_skipped * 4, 4, samples_in, f);
+          if (read < samples_in) next_eof = 1;
+          read += samples_skipped;
+        }
+        else
+        {
+          if (prefill_out < 0)
+            prefill_out = latency;
+          if (prefill_out)
+          {
+            read = prefill_out;
+            if (read > samples_in)
+              read = samples_in;
+            memset(samples, 0, read * 4);
+            prefill_out -= read;
+          }
+          else break;
+        }
         for (i = 0; i < read; ++i)
         {
-          resampler_write_sample(resampler, read_24(samples + i * 3));
+          buffer[i] = read_f32(samples + i * 4);
         }
+        samples_in = read;
       }
 
-      while (resampler_get_avail(resampler))
+      src_data.input_frames = samples_in;
+      src_data.output_frames = 0;
+      src_data.data_out = outbuffer;
+
+      resampler->process(resampler_data, &src_data);
+
+      if (dispose_out)
       {
-        sample_t sample;
-        resampler_read_sample(resampler, &sample);
-        if (sample > (1 << 23) - 1)
-          sample = (1 << 23) - 1;
-        else if (sample < -(1 << 23))
-          sample = -(1 << 23);
-        write_24(g, sample);
+        size_t to_dispose = dispose_out;
+        if (to_dispose > src_data.output_frames)
+          to_dispose = src_data.output_frames;
+        size_t samples_left = src_data.output_frames - to_dispose;
+        src_data.data_out += to_dispose;
+        src_data.output_frames = samples_left;
+        dispose_out -= to_dispose;
       }
 
-      if (feof(f) && !resampler_get_avail(resampler))
+      for (i = 0, samples_out = src_data.output_frames; i < samples_out; ++i)
+      {
+        write_f32(g, outbuffer[i]);
+      }
+
+      if (next_eof && !prefill_out)
         break;
     }
     fclose(f);
@@ -79,7 +152,8 @@ int main(int argc, char ** argv)
 
   fclose(g);
 
-  resampler_destroy(resampler);
+  if (resampler && resampler_data)
+    resampler->free(resampler_data);
 
   return 0;
 }
