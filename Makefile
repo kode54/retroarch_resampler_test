@@ -1,23 +1,24 @@
 CFLAGS = -O2 -IRetroArch -IRetroArch/libretro-common/include
 
 OBJS = test.o \
-       RetroArch/libretro-common/encodings/encoding_utf.o \
-       RetroArch/libretro-common/vfs/vfs_implementation.o \
-       RetroArch/libretro-common/lists/string_list.o \
-       RetroArch/libretro-common/file/file_path_io.o \
-       RetroArch/libretro-common/file/file_path.o \
-       RetroArch/libretro-common/file/config_file_userdata.o \
-       RetroArch/libretro-common/file/config_file.o \
-       RetroArch/libretro-common/streams/file_stream.o \
-       RetroArch/libretro-common/features/features_cpu.o \
-       RetroArch/libretro-common/memmap/memalign.o \
-       RetroArch/libretro-common/time/rtime.o \
        RetroArch/libretro-common/audio/resampler/drivers/sinc_resampler.o \
        RetroArch/libretro-common/audio/resampler/audio_resampler.o \
        RetroArch/libretro-common/audio/conversion/s16_to_float.o \
-       RetroArch/libretro-common/string/stdstring.o \
-       RetroArch/libretro-common/audio/conversion/s16_to_float.o \
-       RetroArch/libretro-common/audio/conversion/s32_to_float.o
+       RetroArch/libretro-common/audio/conversion/s32_to_float.o \
+       RetroArch/libretro-common/features/features_cpu.o \
+       RetroArch/libretro-common/memmap/memalign.o \
+# The following are only needed if the resampler_config struct in audio_resampler.c isn't stubbed out.
+# The sinc resampler doesn't even use the structure anyway.
+#       RetroArch/libretro-common/encodings/encoding_utf.o \
+#       RetroArch/libretro-common/vfs/vfs_implementation.o \
+#       RetroArch/libretro-common/lists/string_list.o \
+#       RetroArch/libretro-common/file/file_path_io.o \
+#       RetroArch/libretro-common/file/file_path.o \
+#       RetroArch/libretro-common/file/config_file_userdata.o \
+#       RetroArch/libretro-common/file/config_file.o \
+#       RetroArch/libretro-common/streams/file_stream.o \
+#       RetroArch/libretro-common/time/rtime.o \
+#       RetroArch/libretro-common/string/stdstring.o
 
 all: test spectrum.png
 
