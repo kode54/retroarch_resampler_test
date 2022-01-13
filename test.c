@@ -43,6 +43,8 @@ int main(int argc, char ** argv)
   float buffer[1024];
   float outbuffer[4096];
 
+  float *outptr;
+
   for ( nf = 0; nf < 4; nf++ )
   {
     f = fopen( files[nf].name, "rb" );
@@ -139,9 +141,11 @@ int main(int argc, char ** argv)
         dispose_out -= to_dispose;
       }
 
+      outptr = src_data.data_out;
+
       for (i = 0, samples_out = src_data.output_frames; i < samples_out; ++i)
       {
-        write_f32(g, outbuffer[i]);
+        write_f32(g, outptr[i]);
       }
 
       if (next_eof && !prefill_out)
