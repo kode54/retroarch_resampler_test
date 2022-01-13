@@ -1,8 +1,11 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+#include <stdbool.h>
 
 #include <audio/audio_resampler.h>
+
+#include <lpc.h>
 
 static inline float read_f32(const uint8_t * p)
 {
@@ -14,6 +17,32 @@ static inline float read_f32(const uint8_t * p)
 static inline void write_f32(FILE * f, float sample)
 {
   fwrite(&sample, 1, 4, f);
+}
+
+static const int extrapolate_order = 16;
+
+static void extrapolate(float *buffer, size_t channels, size_t frameSize, size_t size, bool backward)
+{
+    const size_t delta = (backward ? -1 : 1) * channels;
+    
+    float lpc[extrapolate_order];
+    float work[frameSize];
+    
+    for (size_t ch = 0; ch < channels; ch++)
+    {
+        if (frameSize - size > extrapolate_order * 2)
+        {
+            float *chPcmBuf = buffer + ch + (backward ? frameSize : -1) * channels;
+            for (size_t i = 0; i < frameSize; i++) work[i] = *(chPcmBuf += delta);
+            
+            vorbis_lpc_from_data(work, lpc, (int)(frameSize - size), extrapolate_order);
+            
+            vorbis_lpc_predict(lpc, work + frameSize - size - extrapolate_order, extrapolate_order, work + frameSize - size, size);
+            
+            chPcmBuf = buffer + ch + (backward ? frameSize : -1) * channels;
+            for (size_t i = 0; i < frameSize; i++) *(chPcmBuf += delta) = work[i];
+        }
+    }
 }
 
 int main(int argc, char ** argv)
@@ -52,9 +81,11 @@ int main(int argc, char ** argv)
     double ratio = 44100.0 / (double)(files[nf].freq);
 
     size_t latency;
-    size_t dispose_in = 0;
+    size_t prefill_in = 0;
     size_t dispose_out = 0;
     ssize_t prefill_out = -1;
+    size_t extrapolate_in = 0;
+    size_t extrapolate_out = 0;
     int next_eof = 0;
 
     if (!retro_resampler_realloc(&resampler_data, &resampler,
@@ -67,7 +98,7 @@ int main(int argc, char ** argv)
 
     src_data.data_in = buffer;
 
-    dispose_in = latency = resampler->latency(resampler_data);
+    prefill_in = latency = resampler->latency(resampler_data);
     dispose_out = latency * ratio;
 
     for (;;)
@@ -87,15 +118,16 @@ int main(int argc, char ** argv)
 
       {
         uint8_t samples[samples_in * 4];
-        if (dispose_in)
+        if (prefill_in)
         {
-          read = dispose_in;
+          read = prefill_in;
           if (read > samples_in)
             read = samples_in;
           memset(samples, 0, read * 4);
-          dispose_in -= read;
+          prefill_in -= read;
           samples_in -= read;
           samples_skipped = read;
+          extrapolate_in = read;
         }
         if (!next_eof)
         {
@@ -106,7 +138,7 @@ int main(int argc, char ** argv)
         else
         {
           if (prefill_out < 0)
-            prefill_out = latency;
+            prefill_out = extrapolate_out = latency;
           if (prefill_out)
           {
             read = prefill_out;
@@ -122,6 +154,17 @@ int main(int argc, char ** argv)
           buffer[i] = read_f32(samples + i * 4);
         }
         samples_in = read;
+      }
+
+      if (extrapolate_in)
+      {
+        extrapolate( buffer, 1, samples_in, extrapolate_in, true);
+        extrapolate_in = 0;
+      }
+      else if (extrapolate_out)
+      {
+        extrapolate( buffer, 1, samples_in, extrapolate_out, false);
+        extrapolate_out = 0;
       }
 
       src_data.input_frames = samples_in;

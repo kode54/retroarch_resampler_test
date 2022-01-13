@@ -1,4 +1,4 @@
-CFLAGS = -O2 -IRetroArch -IRetroArch/libretro-common/include
+CFLAGS = -O2 -IRetroArch -IRetroArch/libretro-common/include -IVorbis
 
 OBJS = test.o \
        RetroArch/libretro-common/audio/resampler/drivers/sinc_resampler.o \
@@ -7,6 +7,7 @@ OBJS = test.o \
        RetroArch/libretro-common/audio/conversion/s32_to_float.o \
        RetroArch/libretro-common/features/features_cpu.o \
        RetroArch/libretro-common/memmap/memalign.o \
+       Vorbis/lpc.o
 # The following are only needed if the resampler_config struct in audio_resampler.c isn't stubbed out.
 # The sinc resampler doesn't even use the structure anyway.
 #       RetroArch/libretro-common/encodings/encoding_utf.o \
