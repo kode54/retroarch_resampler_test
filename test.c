@@ -153,7 +153,7 @@ int main(int argc, char ** argv)
   fclose(g);
 
   if (resampler && resampler_data)
-    resampler->free(resampler_data);
+    resampler->free(resampler, resampler_data);
 
   return 0;
 }
