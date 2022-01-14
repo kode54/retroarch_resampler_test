@@ -1,4 +1,4 @@
-CFLAGS = -O2 -IRetroArch -IRetroArch/libretro-common/include -IVorbis
+CFLAGS = -Os -IRetroArch -IRetroArch/libretro-common/include -IVorbis -DHAVE_CONFIG_H=1
 
 OBJS = test.o \
        RetroArch/libretro-common/audio/resampler/drivers/sinc_resampler.o \
