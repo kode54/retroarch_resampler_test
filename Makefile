@@ -8,6 +8,7 @@ OBJS = test.o \
        RetroArch/libretro-common/features/features_cpu.o \
        RetroArch/libretro-common/memmap/memalign.o \
        Vorbis/lpc.o
+
 # The following are only needed if the resampler_config struct in audio_resampler.c isn't stubbed out.
 # The sinc resampler doesn't even use the structure anyway.
 #       RetroArch/libretro-common/encodings/encoding_utf.o \
@@ -27,7 +28,8 @@ test : $(OBJS)
 	$(CC) -o $@ $^
 
 .c.o:
-	$(CC) -c $(CFLAGS) $*.c -o $@
+	$(CC) -S $(CFLAGS) $*.c -o $*.s
+	$(CC) -c $(CFLAGS) $*.s -o $@
 
 sweep16.raw:
 	sox -V -r 16000 -c 1 -b 32 -L -e floating-point -n $@ synth 8 sine 1:8000 vol -6dB
@@ -48,4 +50,4 @@ spectrum.png: sweep_out_44.raw
 	sox -b 32 -L -r 44100 -c 1 -e floating-point $^ -n spectrogram -w Kaiser -z 180 -o $@
 
 clean:
-	rm -f $(OBJS) test sweep{16,32,48,96}.raw sweep_out_44.raw spectrum.png > /dev/null
+	rm -f $(OBJS) $(patsubst %.o,%.s,$(OBJS)) test sweep{16,32,48,96}.raw sweep_out_44.raw spectrum.png > /dev/null
